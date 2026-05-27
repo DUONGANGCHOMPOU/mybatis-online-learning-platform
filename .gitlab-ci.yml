@@ -8,17 +8,16 @@ variables:
   MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
   IMAGE_TAG: $CI_COMMIT_SHORT_SHA
 
-# ─── Cache Maven dependencies ───────────────────────────────────────
 cache:
   paths:
     - .m2/repository
 
-# ─── STAGE 1: Build & Test ──────────────────────────────────────────
+# ─── STAGE 1: Build ─────────────────────────────────────────────────
 build:
   stage: build
   image: maven:3.9.6-eclipse-temurin-21
   script:
-    - echo "Building and testing..."
+    - echo "Building..."
     - mvn clean package -DskipTests
   artifacts:
     paths:
@@ -27,7 +26,7 @@ build:
   only:
     - main
 
-# ─── STAGE 2: Build Docker Image & Push to Registry ─────────────────
+# ─── STAGE 2: Docker Build & Push ───────────────────────────────────
 docker-build:
   stage: docker
   image: docker:24
@@ -36,17 +35,14 @@ docker-build:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   script:
-    - echo "Logging into GitLab Registry..."
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - echo "Building Docker image..."
     - docker build -t $CI_REGISTRY_IMAGE:$IMAGE_TAG -t $CI_REGISTRY_IMAGE:latest .
-    - echo "Pushing Docker image..."
     - docker push $CI_REGISTRY_IMAGE:$IMAGE_TAG
     - docker push $CI_REGISTRY_IMAGE:latest
   only:
     - main
 
-# ─── STAGE 3: Deploy via SSH ─────────────────────────────────────────
+# ─── STAGE 3: Deploy ────────────────────────────────────────────────
 deploy:
   stage: deploy
   image: alpine:latest
@@ -55,9 +51,9 @@ deploy:
     - eval $(ssh-agent -s)
     - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
     - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
     - ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
   script:
-    - echo "Deploying to server..."
     - |
       ssh $DEPLOY_USER@$DEPLOY_HOST "
         docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY &&
@@ -73,7 +69,7 @@ deploy:
   only:
     - main
 
-# ─── STAGE 4: Telegram Notification ─────────────────────────────────
+# ─── STAGE 4: Notify ────────────────────────────────────────────────
 notify-success:
   stage: notify
   image: alpine:latest
@@ -81,19 +77,10 @@ notify-success:
     - apk add --no-cache curl
   script:
     - |
-      MESSAGE="✅ *Deployment Successful!*
-      
-      📦 *Project:* $CI_PROJECT_NAME
-      🌿 *Branch:* $CI_COMMIT_REF_NAME
-      👤 *Author:* $CI_COMMIT_AUTHOR
-      💬 *Message:* $CI_COMMIT_MESSAGE
-      🔖 *Commit:* \`$CI_COMMIT_SHORT_SHA\`
-      🔗 [View Pipeline]($CI_PIPELINE_URL)"
-
       curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
         -d chat_id="$TELEGRAM_CHAT_ID" \
         -d parse_mode="Markdown" \
-        -d text="$MESSAGE"
+        -d text="✅ *Deployment Successful!*%0A📦 *Project:* $CI_PROJECT_NAME%0A🌿 *Branch:* $CI_COMMIT_REF_NAME%0A🔖 *Commit:* $CI_COMMIT_SHORT_SHA"
   when: on_success
   only:
     - main
@@ -105,19 +92,10 @@ notify-failure:
     - apk add --no-cache curl
   script:
     - |
-      MESSAGE="❌ *Deployment FAILED!*
-      
-      📦 *Project:* $CI_PROJECT_NAME
-      🌿 *Branch:* $CI_COMMIT_REF_NAME
-      👤 *Author:* $CI_COMMIT_AUTHOR
-      💬 *Message:* $CI_COMMIT_MESSAGE
-      🔖 *Commit:* \`$CI_COMMIT_SHORT_SHA\`
-      🔗 [View Pipeline]($CI_PIPELINE_URL)"
-
       curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
         -d chat_id="$TELEGRAM_CHAT_ID" \
         -d parse_mode="Markdown" \
-        -d text="$MESSAGE"
+        -d text="❌ *Deployment FAILED!*%0A📦 *Project:* $CI_PROJECT_NAME%0A🌿 *Branch:* $CI_COMMIT_REF_NAME%0A🔖 *Commit:* $CI_COMMIT_SHORT_SHA"
   when: on_failure
   only:
     - main
