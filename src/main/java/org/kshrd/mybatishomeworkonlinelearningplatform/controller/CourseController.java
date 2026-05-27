@@ -19,7 +19,7 @@ import java.util.List;
 @RequestMapping("/api/v1/courses")
 public class CourseController {
 
-    private final CourseService courseService; /** Test TT**/
+    private final CourseService courseService; /** Testt TT**/
 
     @PostMapping
     public ResponseEntity<APIResponse<Course>> addNewCourse(@RequestBody @Valid CourseRequest courseRequest){
